@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- PRIMITIVES & HELPERS ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        request.auth.token.email == 'rofiadrjt@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- VALIDATION BLUEPRINTS ---
+
+    function isValidSiteSettings(data) {
+      return data.keys().hasAll(['headline', 'description', 'whatsappNumber']) &&
+             data.headline is string && data.headline.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.whatsappNumber is string && data.whatsappNumber.size() <= 20 &&
+             (data.get('heroImage', '') is string) &&
+             (data.get('processImage', '') is string) &&
+             (data.get('shopeeLink', '') is string) &&
+             (data.get('tokopediaLink', '') is string);
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'price', 'imageUrl']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.price is string && data.price.size() <= 50 &&
+             data.imageUrl is string && data.imageUrl.size() <= 500 &&
+             (data.get('description', '') is string) &&
+             (data.get('order', 0) is number);
+    }
+
+    function isValidTestimonial(data) {
+      return data.keys().hasAll(['name', 'text']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.text is string && data.text.size() <= 500 &&
+             (data.get('role', '') is string) &&
+             (data.get('avatarUrl', '') is string);
+    }
+
+    function isValidFAQ(data) {
+      return data.keys().hasAll(['question', 'answer']) &&
+             data.question is string && data.question.size() <= 200 &&
+             data.answer is string && data.answer.size() <= 1000 &&
+             (data.get('order', 0) is number);
+    }
+
+    function isValidArticle(data) {
+      return data.keys().hasAll(['title', 'slug', 'content']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.slug is string && data.slug.size() <= 200 &&
+             data.content is string && data.content.size() <= 50000 &&
+             (data.get('imageUrl', '') is string) &&
+             (data.get('published', false) is bool) &&
+             (data.get('createdAt', 0) is number);
+    }
+
+    // --- COLLECTION RULES ---
+
+    // Site Settings
+    match /settings/general {
+      allow read: if true;
+      allow write: if isAdmin() && isValidSiteSettings(incoming());
+    }
+
+    // Products
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Testimonials
+    match /testimonials/{testimonialId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(testimonialId) && isValidTestimonial(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // FAQ
+    match /faqs/{faqId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(faqId) && isValidFAQ(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Articles
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(articleId) && isValidArticle(incoming());
+      allow delete: if isAdmin();
+    }
+    
+    // Explicit deny for any other write in these collections
+    // (Handled by the default deny but explicitly listed for clarity if needed)
+  }
+}
